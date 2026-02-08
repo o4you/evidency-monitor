@@ -1,0 +1,43 @@
+{
+    "name": "output4you/evidency-monitor",
+    "description": "ISO compliance code validation and evidence monitoring tool",
+    "type": "project",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Output4you",
+            "email": "info@output4you.nl"
+        }
+    ],
+    "minimum-stability": "stable",
+    "require": {
+        "php": ">=8.1",
+        "ext-json": "*",
+        "ext-pdo": "*"
+    },
+    "require-dev": {
+        "phpstan/phpstan": "^1.10",
+        "phpunit/phpunit": "^10.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "EvidencyMonitor\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "EvidencyMonitor\\Tests\\": "tests/"
+        }
+    },
+    "bin": [
+        "bin/evidency"
+    ],
+    "scripts": {
+        "test": "phpunit",
+        "analyse": "phpstan analyse src --level=5",
+        "scan": "php bin/evidency scan"
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

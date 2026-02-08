@@ -1,0 +1,39 @@
+{
+    "output_dir": "D:\\ISO\\Evidence\\CodeValidation",
+    "projects": {
+        "J2M": {
+            "path": "D:\\wwwroot\\j2m.docutweak.nl\\Versie3",
+            "exclude": ["archief", "vendor", "node_modules", "logs"]
+        },
+        "Bestanden": {
+            "path": "D:\\wwwroot\\bestanden.docutweak.nl",
+            "exclude": ["vendor", "node_modules", "uploads"]
+        },
+        "Mailjet-Webhook": {
+            "path": "D:\\wwwroot\\WEBHOOK_MAILJET",
+            "exclude": ["vendor", "logs"]
+        },
+        "Formbuilder": {
+            "path": "D:\\wwwroot\\o4y_formbuilder",
+            "exclude": ["vendor", "node_modules"]
+        }
+    },
+    "scanners": {
+        "syntax": true,
+        "security": true,
+        "dependencies": true,
+        "git": true
+    },
+    "reporters": {
+        "text": true,
+        "json": true,
+        "html": false
+    },
+    "email": {
+        "enabled": true,
+        "to": "richard@output4you.nl",
+        "from": "noreply@output4you.nl"
+    },
+    "exclude_dirs": ["vendor", "node_modules", ".git", "tests", "archief"],
+    "file_extensions": ["php"]
+}

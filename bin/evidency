@@ -1,0 +1,253 @@
+#!/usr/bin/env php
+<?php
+/**
+ * EvidencyMonitor CLI
+ *
+ * ISO Compliance Code Validation Tool
+ *
+ * Usage:
+ *   php bin/evidency scan [--config=config.json] [--email]
+ *   php bin/evidency init
+ *   php bin/evidency version
+ *
+ * @author Output4you <info@output4you.nl>
+ */
+
+declare(strict_types=1);
+
+// Find autoloader
+$autoloadPaths = [
+    __DIR__ . '/../vendor/autoload.php',
+    __DIR__ . '/../../../autoload.php',
+];
+
+$autoloaderFound = false;
+foreach ($autoloadPaths as $path) {
+    if (file_exists($path)) {
+        require $path;
+        $autoloaderFound = true;
+        break;
+    }
+}
+
+// Fallback: manual class loading if no composer autoload
+if (!$autoloaderFound) {
+    spl_autoload_register(function ($class) {
+        $prefix = 'EvidencyMonitor\\';
+        $baseDir = __DIR__ . '/../src/';
+
+        $len = strlen($prefix);
+        if (strncmp($prefix, $class, $len) !== 0) {
+            return;
+        }
+
+        $relativeClass = substr($class, $len);
+        $file = $baseDir . str_replace('\\', '/', $relativeClass) . '.php';
+
+        if (file_exists($file)) {
+            require $file;
+        }
+    });
+}
+
+use EvidencyMonitor\EvidencyMonitor;
+use EvidencyMonitor\Notifiers\EmailNotifier;
+
+// CLI colors
+function colorize(string $text, string $color): string
+{
+    $colors = [
+        'red' => "\033[31m",
+        'green' => "\033[32m",
+        'yellow' => "\033[33m",
+        'blue' => "\033[34m",
+        'magenta' => "\033[35m",
+        'cyan' => "\033[36m",
+        'reset' => "\033[0m",
+        'bold' => "\033[1m",
+    ];
+
+    return ($colors[$color] ?? '') . $text . $colors['reset'];
+}
+
+function printBanner(): void
+{
+    echo colorize("
+  ______     _     _                      __  __             _ _
+ |  ____|   (_)   | |                    |  \/  |           (_) |
+ | |____   ___  __| | ___ _ __   ___ _   | \  / | ___  _ __  _| |_ ___  _ __
+ |  __\ \ / / |/ _` |/ _ \ '_ \ / __| | | | |\/| / _ \| '_ \| | __/ _ \| '__|
+ | |___\ V /| | (_| |  __/ | | | (__| |_| | |  | (_) | | | | | || (_) | |
+ |______\_/ |_|\__,_|\___|_| |_|\___|\__, |_|  |_\___/|_| |_|_|\__\___/|_|
+                                      __/ |
+                                     |___/   v1.0.0 - ISO Compliance Tool
+", 'cyan');
+    echo "\n";
+}
+
+function printUsage(): void
+{
+    echo colorize("Usage:\n", 'bold');
+    echo "  evidency <command> [options]\n\n";
+    echo colorize("Commands:\n", 'bold');
+    echo "  scan      Run code validation scan\n";
+    echo "  init      Create configuration file\n";
+    echo "  version   Show version information\n";
+    echo "\n";
+    echo colorize("Options:\n", 'bold');
+    echo "  --config=FILE   Use custom config file (default: evidency.json)\n";
+    echo "  --email         Send email notification after scan\n";
+    echo "  --html          Generate HTML report\n";
+    echo "  --quiet         Minimal output\n";
+    echo "\n";
+}
+
+function createConfig(string $path): void
+{
+    $config = [
+        'output_dir' => './reports',
+        'projects' => [
+            'MyProject' => [
+                'path' => '/path/to/project',
+                'exclude' => ['vendor', 'node_modules']
+            ]
+        ],
+        'scanners' => [
+            'syntax' => true,
+            'security' => true,
+            'dependencies' => true,
+            'git' => true
+        ],
+        'reporters' => [
+            'text' => true,
+            'json' => true,
+            'html' => false
+        ],
+        'email' => [
+            'enabled' => false,
+            'to' => 'admin@example.com',
+            'from' => 'noreply@example.com'
+        ]
+    ];
+
+    file_put_contents($path, json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+    echo colorize("✓ ", 'green') . "Created configuration file: {$path}\n";
+    echo "  Edit this file to configure your projects.\n";
+}
+
+function runScan(array $options): void
+{
+    $configFile = $options['config'] ?? 'evidency.json';
+
+    if (!file_exists($configFile)) {
+        echo colorize("✗ ", 'red') . "Config file not found: {$configFile}\n";
+        echo "  Run 'evidency init' to create one.\n";
+        exit(1);
+    }
+
+    $config = json_decode(file_get_contents($configFile), true);
+    if (!$config) {
+        echo colorize("✗ ", 'red') . "Invalid JSON in config file\n";
+        exit(1);
+    }
+
+    // Override HTML reporter if --html flag
+    if (isset($options['html'])) {
+        $config['reporters']['html'] = true;
+    }
+
+    echo colorize("Starting scan...\n\n", 'bold');
+
+    $monitor = new EvidencyMonitor($config);
+
+    // Add projects from config
+    foreach ($config['projects'] ?? [] as $name => $project) {
+        $monitor->addProject($name, $project['path'], $project);
+    }
+
+    // Add email notifier if --email flag or config
+    if (isset($options['email']) || ($config['email']['enabled'] ?? false)) {
+        $emailTo = $config['email']['to'] ?? 'admin@localhost';
+        $emailFrom = $config['email']['from'] ?? 'noreply@localhost';
+        $monitor->addNotifier(new EmailNotifier($emailTo, $emailFrom, $config));
+    }
+
+    // Run scan
+    $result = $monitor->run();
+
+    // Print results
+    echo "\n";
+    echo colorize("═══════════════════════════════════════════════════════════════\n", 'cyan');
+    echo colorize("                         SCAN COMPLETE\n", 'bold');
+    echo colorize("═══════════════════════════════════════════════════════════════\n", 'cyan');
+
+    $summary = $result['results']['summary'];
+
+    echo "\n";
+    echo "  Projects scanned: " . count($result['results']['projects']) . "\n";
+    echo "  Total files:      {$summary['total_files']}\n";
+
+    $errorsColor = $summary['total_errors'] > 0 ? 'red' : 'green';
+    echo "  Total errors:     " . colorize((string)$summary['total_errors'], $errorsColor) . "\n";
+
+    $warningsColor = $summary['total_warnings'] > 0 ? 'yellow' : 'green';
+    echo "  Total warnings:   " . colorize((string)$summary['total_warnings'], $warningsColor) . "\n";
+
+    echo "\n";
+
+    $statusColor = match ($summary['status']) {
+        'OK' => 'green',
+        'WARNINGS' => 'yellow',
+        'ERRORS' => 'red',
+        default => 'reset'
+    };
+    echo "  Status: " . colorize($summary['status'], $statusColor) . "\n";
+
+    echo "\n";
+    echo colorize("Reports generated:\n", 'bold');
+    foreach ($result['reports'] as $report) {
+        echo "  → {$report}\n";
+    }
+
+    echo "\n";
+
+    exit($summary['total_errors'] > 0 ? 1 : 0);
+}
+
+// Parse CLI arguments
+$args = $argv ?? [];
+array_shift($args); // Remove script name
+
+$command = $args[0] ?? 'help';
+$options = [];
+
+foreach ($args as $arg) {
+    if (str_starts_with($arg, '--')) {
+        $parts = explode('=', substr($arg, 2), 2);
+        $options[$parts[0]] = $parts[1] ?? true;
+    }
+}
+
+// Handle commands
+printBanner();
+
+switch ($command) {
+    case 'scan':
+        runScan($options);
+        break;
+
+    case 'init':
+        $configPath = $options['config'] ?? 'evidency.json';
+        createConfig($configPath);
+        break;
+
+    case 'version':
+        echo "EvidencyMonitor v1.0.0\n";
+        echo "PHP " . PHP_VERSION . "\n";
+        break;
+
+    case 'help':
+    default:
+        printUsage();
+        break;
+}

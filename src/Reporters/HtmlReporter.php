@@ -1,0 +1,196 @@
+<?php
+
+declare(strict_types=1);
+
+namespace EvidencyMonitor\Reporters;
+
+/**
+ * HTML Reporter
+ *
+ * Generates HTML reports with styling
+ */
+class HtmlReporter implements ReporterInterface
+{
+    private array $config;
+
+    public function __construct(array $config = [])
+    {
+        $this->config = $config;
+    }
+
+    public function getName(): string
+    {
+        return 'html';
+    }
+
+    public function generate(array $results): array
+    {
+        $files = [];
+        $date = date('Y-m-d');
+        $outputDir = $this->config['output_dir'] ?? getcwd() . '/reports';
+
+        $filename = "{$date}-report.html";
+        $filepath = $outputDir . DIRECTORY_SEPARATOR . $filename;
+
+        $html = $this->generateHtml($results);
+        file_put_contents($filepath, $html);
+        $files[] = $filepath;
+
+        return $files;
+    }
+
+    private function generateHtml(array $results): string
+    {
+        $status = $results['summary']['status'] ?? 'UNKNOWN';
+        $statusColor = match ($status) {
+            'OK' => '#28a745',
+            'WARNINGS' => '#ffc107',
+            'ERRORS' => '#dc3545',
+            default => '#6c757d',
+        };
+
+        $projectsHtml = '';
+        foreach ($results['projects'] ?? [] as $name => $project) {
+            $projectsHtml .= $this->generateProjectHtml($project);
+        }
+
+        return <<<HTML
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EvidencyMonitor Report - {$results['timestamp']}</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 12px; margin-bottom: 20px; }
+        .header h1 { font-size: 2rem; margin-bottom: 10px; }
+        .status-badge { display: inline-block; padding: 8px 16px; border-radius: 20px; font-weight: bold; background: {$statusColor}; color: white; }
+        .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
+        .summary-card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .summary-card h3 { color: #666; font-size: 0.9rem; margin-bottom: 5px; }
+        .summary-card .value { font-size: 2rem; font-weight: bold; color: #333; }
+        .project { background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; overflow: hidden; }
+        .project-header { background: #f8f9fa; padding: 15px 20px; border-bottom: 1px solid #dee2e6; }
+        .project-header h2 { font-size: 1.2rem; }
+        .project-body { padding: 20px; }
+        .scanner-section { margin-bottom: 20px; }
+        .scanner-section h3 { color: #495057; margin-bottom: 10px; padding-bottom: 5px; border-bottom: 2px solid #dee2e6; }
+        .issue { background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px 15px; margin-bottom: 10px; border-radius: 0 4px 4px 0; }
+        .issue.critical { background: #f8d7da; border-color: #dc3545; }
+        .issue.high { background: #ffe5d0; border-color: #fd7e14; }
+        .issue-file { font-family: monospace; font-weight: bold; }
+        .issue-message { margin-top: 5px; color: #666; }
+        .ok { color: #28a745; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #dee2e6; }
+        th { background: #f8f9fa; }
+        .footer { text-align: center; padding: 20px; color: #666; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>EvidencyMonitor Report</h1>
+            <p>Generated: {$results['timestamp']}</p>
+            <p style="margin-top: 10px;"><span class="status-badge">{$status}</span></p>
+        </div>
+
+        <div class="summary">
+            <div class="summary-card">
+                <h3>Projects</h3>
+                <div class="value">{$this->count($results['projects'])}</div>
+            </div>
+            <div class="summary-card">
+                <h3>Files Scanned</h3>
+                <div class="value">{$results['summary']['total_files']}</div>
+            </div>
+            <div class="summary-card">
+                <h3>Errors</h3>
+                <div class="value" style="color: #dc3545;">{$results['summary']['total_errors']}</div>
+            </div>
+            <div class="summary-card">
+                <h3>Warnings</h3>
+                <div class="value" style="color: #ffc107;">{$results['summary']['total_warnings']}</div>
+            </div>
+        </div>
+
+        {$projectsHtml}
+
+        <div class="footer">
+            <p>Generated by EvidencyMonitor v1.0.0 | Output4you</p>
+        </div>
+    </div>
+</body>
+</html>
+HTML;
+    }
+
+    private function generateProjectHtml(array $project): string
+    {
+        $scannersHtml = '';
+
+        foreach ($project['scanner_results'] ?? [] as $name => $result) {
+            $scannersHtml .= $this->generateScannerHtml($name, $result);
+        }
+
+        $statusIcon = $project['errors'] === 0 ? '✓' : '✗';
+        $statusClass = $project['errors'] === 0 ? 'ok' : '';
+
+        return <<<HTML
+<div class="project">
+    <div class="project-header">
+        <h2><span class="{$statusClass}">{$statusIcon}</span> {$project['name']}</h2>
+        <small>{$project['path']} | {$project['files_scanned']} files | {$project['errors']} errors | {$project['warnings']} warnings</small>
+    </div>
+    <div class="project-body">
+        {$scannersHtml}
+    </div>
+</div>
+HTML;
+    }
+
+    private function generateScannerHtml(string $name, array $result): string
+    {
+        $issues = $result['issues'] ?? [];
+
+        if (empty($issues)) {
+            return <<<HTML
+<div class="scanner-section">
+    <h3>{$name}</h3>
+    <p class="ok">✓ No issues found</p>
+</div>
+HTML;
+        }
+
+        $issuesHtml = '';
+        foreach (array_slice($issues, 0, 20) as $issue) {
+            $severity = $issue['severity'] ?? 'medium';
+            $issuesHtml .= <<<HTML
+<div class="issue {$severity}">
+    <div class="issue-file">{$issue['file']}" . (isset($issue['line']) ? ":{$issue['line']}" : "") . "</div>
+    <div class="issue-message">{$issue['message']}</div>
+</div>
+HTML;
+        }
+
+        $moreCount = count($issues) - 20;
+        if ($moreCount > 0) {
+            $issuesHtml .= "<p><em>... and {$moreCount} more issues</em></p>";
+        }
+
+        return <<<HTML
+<div class="scanner-section">
+    <h3>{$name} (" . count($issues) . " issues)</h3>
+    {$issuesHtml}
+</div>
+HTML;
+    }
+
+    private function count($arr): int
+    {
+        return is_array($arr) ? count($arr) : 0;
+    }
+}

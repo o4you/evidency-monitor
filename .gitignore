@@ -1,0 +1,26 @@
+# Composer
+/vendor/
+composer.lock
+
+# Reports (generated)
+/reports/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config (user-specific)
+evidency.json
+
+# Logs
+*.log
+
+# Cache
+.phpunit.cache/
+.php-cs-fixer.cache
