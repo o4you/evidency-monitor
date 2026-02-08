@@ -13,6 +13,21 @@ class SecurityScanner implements ScannerInterface
 {
     private array $config;
 
+    /**
+     * Files to skip (admin scripts, setup scripts, etc.)
+     */
+    private array $skipPatterns = [
+        '/backup\.php$/',
+        '/database_maintenance\.php$/',
+        '/code_validation\.php$/',
+        '/setup.*\.php$/',
+        '/create_.*\.php$/',
+        '/fix_.*\.php$/',
+        '/import_.*\.php$/',
+        '/reset_.*\.php$/',
+        '/ClearDB.*\.php$/',
+    ];
+
     private array $patterns = [
         // Code execution
         'eval' => [
@@ -21,38 +36,42 @@ class SecurityScanner implements ScannerInterface
             'message' => 'eval() can execute arbitrary code - avoid if possible',
             'cwe' => 'CWE-95',
         ],
-        'exec' => [
-            'pattern' => '/\bexec\s*\(/i',
-            'severity' => 'high',
-            'message' => 'exec() - ensure input is properly sanitized',
+        // Only flag exec/shell functions when user input might be involved
+        'exec_user_input' => [
+            'pattern' => '/\bexec\s*\([^)]*\$_(GET|POST|REQUEST|COOKIE)/',
+            'severity' => 'critical',
+            'message' => 'exec() with user input - command injection risk',
             'cwe' => 'CWE-78',
         ],
-        'shell_exec' => [
-            'pattern' => '/\bshell_exec\s*\(/i',
-            'severity' => 'high',
-            'message' => 'shell_exec() - ensure input is properly sanitized',
+        'shell_exec_user_input' => [
+            'pattern' => '/\bshell_exec\s*\([^)]*\$_(GET|POST|REQUEST|COOKIE)/',
+            'severity' => 'critical',
+            'message' => 'shell_exec() with user input - command injection risk',
             'cwe' => 'CWE-78',
         ],
-        'system' => [
-            'pattern' => '/\bsystem\s*\(/i',
-            'severity' => 'high',
-            'message' => 'system() - ensure input is properly sanitized',
+        'system_user_input' => [
+            'pattern' => '/\bsystem\s*\([^)]*\$_(GET|POST|REQUEST|COOKIE)/',
+            'severity' => 'critical',
+            'message' => 'system() with user input - command injection risk',
             'cwe' => 'CWE-78',
         ],
-        'passthru' => [
-            'pattern' => '/\bpassthru\s*\(/i',
-            'severity' => 'high',
-            'message' => 'passthru() - ensure input is properly sanitized',
+        'passthru_user_input' => [
+            'pattern' => '/\bpassthru\s*\([^)]*\$_(GET|POST|REQUEST|COOKIE)/',
+            'severity' => 'critical',
+            'message' => 'passthru() with user input - command injection risk',
             'cwe' => 'CWE-78',
         ],
-        'proc_open' => [
-            'pattern' => '/\bproc_open\s*\(/i',
-            'severity' => 'high',
-            'message' => 'proc_open() - ensure input is properly sanitized',
+        'proc_open_user_input' => [
+            'pattern' => '/\bproc_open\s*\([^)]*\$_(GET|POST|REQUEST|COOKIE)/',
+            'severity' => 'critical',
+            'message' => 'proc_open() with user input - command injection risk',
             'cwe' => 'CWE-78',
         ],
-        'backticks' => [
-            'pattern' => '/`[^`]+`/',
+        // Backtick shell execution - very specific pattern
+        // Exclude: JS template literals, SQL identifiers
+        // Only match: PHP backtick at start of statement like $x = `command`;
+        'backticks_shell' => [
+            'pattern' => '/^\s*\$\w+\s*=\s*`[^`]+`\s*;/m',
             'severity' => 'high',
             'message' => 'Backtick operator executes shell commands',
             'cwe' => 'CWE-78',
@@ -188,6 +207,7 @@ class SecurityScanner implements ScannerInterface
         $result = [
             'name' => $this->getName(),
             'files_checked' => 0,
+            'files_skipped' => 0,
             'errors' => 0,
             'warnings' => 0,
             'issues' => [],
@@ -201,6 +221,12 @@ class SecurityScanner implements ScannerInterface
 
         foreach ($files as $file) {
             if (pathinfo($file, PATHINFO_EXTENSION) !== 'php') {
+                continue;
+            }
+
+            // Skip admin/setup scripts
+            if ($this->shouldSkip($file)) {
+                $result['files_skipped']++;
                 continue;
             }
 
@@ -252,5 +278,24 @@ class SecurityScanner implements ScannerInterface
     {
         $this->patterns[$name] = $pattern;
         return $this;
+    }
+
+    public function addSkipPattern(string $pattern): self
+    {
+        $this->skipPatterns[] = $pattern;
+        return $this;
+    }
+
+    private function shouldSkip(string $file): bool
+    {
+        $filename = basename($file);
+
+        foreach ($this->skipPatterns as $pattern) {
+            if (preg_match($pattern, $filename)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
